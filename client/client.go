@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
-    "fmt"
-    "os"
+	"fmt"
+	"os"
 	"log"
 	"math/big"
 	"encoding/json"
@@ -88,10 +88,11 @@ func (fc *FurtiveClient) ReadMessages() {
 func (fc *FurtiveClient) RoundOne(votingData *VotingData) {
 	fmt.Println("Question:", votingData.Question)
 	participant := NewParticipant(votingData.Generator, votingData.BigPrimary, votingData.Divisor, votingData.Id)
-	gXi := participant.BroadcastGXi()
-	value := &Value{gXi}
-	msg := &Message{"roundOne", value}
-	fc.SendMessage(msg)
+	fc.SendMessage(&Message{
+		Type: "roundOne", 
+		Contents: &Value{
+			Number: participant.GetGXi(),
+		}})
 	fc.Participant = participant
 }
 
@@ -106,19 +107,21 @@ func (fc *FurtiveClient) RoundTwo() {
 	var vote *big.Int
 	switch text {
 	case "Y":
-		vote = fc.Participant.VoteVeto()
+		vote = fc.Participant.GetVoteVeto()
 	case "N":
-		vote = fc.Participant.VoteNoVeto()
+		vote = fc.Participant.GetVoteNoVeto()
 	default:
-		vote = fc.Participant.VoteNoVeto()
+		vote = fc.Participant.GetVoteNoVeto()
 	}
-	value := &Value{vote}
-	msg := &Message{"roundTwo", value}
-	fc.SendMessage(msg)
+	fc.SendMessage(&Message{
+		Type: "roundTwo", 
+		Contents: &Value{
+			Number: vote,
+		}})
 }
 
 func (fc *FurtiveClient) CheckResult(values *Values) {
-	if isVeto(values.Numbers, values.Length, fc.Participant.p) {
+	if fc.Participant.isVeto(values.Numbers, values.Length) {
 		fmt.Println("Veto!")
 	} else {
 		fmt.Println("No veto")

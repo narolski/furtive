@@ -23,7 +23,7 @@ func NewParticipant(g, q, p *big.Int, index int) *Participant {
 	return participant
 }
 
-func (participant *Participant) BroadcastGXi() *big.Int {
+func (participant *Participant) GetGXi() *big.Int {
 	return big.NewInt(0).Exp(participant.g, participant.x, participant.p)
 }
 
@@ -38,7 +38,7 @@ func (participant *Participant) ComputeGYi(listOfGXi []*big.Int, sizeOfList int)
 	participant.GYi = lowerIndexes.Mod(lowerIndexes.Mul(lowerIndexes, higherIndexes.ModInverse(higherIndexes, participant.p)), participant.p)
 }
 
-func (participant *Participant) VoteVeto() *big.Int {
+func (participant *Participant) GetVoteVeto() *big.Int {
 	c := getRandom(participant.q)
 	for c.Cmp(participant.x) == 0 {
 		c = getRandom(participant.q)
@@ -46,6 +46,14 @@ func (participant *Participant) VoteVeto() *big.Int {
 	return c.Exp(participant.GYi, c, participant.p)
 }
 
-func (participant *Participant) VoteNoVeto() *big.Int {
+func (participant *Participant) GetVoteNoVeto() *big.Int {
 	return big.NewInt(0).Exp(participant.GYi, participant.x, participant.p)
+}
+
+func (participant *Participant) isVeto(listOfVotes []*big.Int, sizeOfList int) bool {
+	result := big.NewInt(1)
+	for i := 0; i < sizeOfList; i++ {
+		result.Mod(result.Mul(result, listOfVotes[i]), participant.p)
+	}
+	return result.Cmp(big.NewInt(1)) != 0
 }

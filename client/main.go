@@ -5,9 +5,7 @@ import (
 	"crypto/x509"
 	"io/ioutil"
 	"net/http"
-	// "math/big"
 	"net/url"
-	// "fmt"
 
 	"github.com/gorilla/websocket"
 )

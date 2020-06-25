@@ -48,6 +48,12 @@ type FurtiveServer struct {
 	mu            sync.Mutex
 }
 
+type Group struct {
+	Generator *big.Int
+	BigPrimary *big.Int
+	Divisor *big.Int
+}
+
 func NewFurtiveServer(playersAmount int) *FurtiveServer {
 	return &FurtiveServer{
 		playersAmount: playersAmount,
@@ -73,8 +79,12 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 	fs.registerClient(ws)
 	
 	// TODO: Necessary to add id for clients (now 0) -> FROM 0, not 1
-	data := &VotingData{0, fs.question, big.NewInt(3), big.NewInt(3863), big.NewInt(7727)}
-	fs.sendMessageToClient(&Message{"votingData", data}, ws)
+	group := &Group{
+		Generator: big.NewInt(3), 
+		BigPrimary: big.NewInt(3863), 
+		Divisor: big.NewInt(7727),
+	}
+	fs.sendMessageToClient(&Message{"votingData", &VotingData{0, fs.question, group.Generator, group.BigPrimary, group.Divisor}}, ws)
 
 	// Pass messages from clients to other clients
 	// TODO: Now only one client
