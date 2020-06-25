@@ -10,8 +10,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const ADDRESS = ":9200"
-const CLIENTS = 1
+const serverAddress = ":9200"
+const clientsMaxAmount = 3
 
 func main() {
 	caCert, err := ioutil.ReadFile("certs/ca.crt")
@@ -27,15 +27,13 @@ func main() {
 	}
 	tlsConfig.BuildNameToCertificate()
 
-	s := NewFurtiveServer(CLIENTS)
-	go s.broadcastToClients()
-
+	s := NewFurtiveServer(clientsMaxAmount)
 	r := mux.NewRouter()
 	r.HandleFunc("/ws", s.connectionHandler)
 
 	server := &http.Server{
 		Handler:   r,
-		Addr:      ADDRESS,
+		Addr:      serverAddress,
 		TLSConfig: tlsConfig,
 	}
 	log.Info("Listening on: ", server.Addr)
