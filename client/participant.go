@@ -14,13 +14,13 @@ type Participant struct {
 }
 
 func NewParticipant(g, q, p *big.Int, index int) *Participant {
-	participant := new(Participant)
-	participant.index = index
-	participant.x = getRandom(q)
-	participant.g = g
-	participant.q = q
-	participant.p = p
-	return participant
+	return &Participant{
+	    index: index,
+	    x: getRandom(q),
+	    g: g,
+	    q : q,
+	    p : p,
+	}
 }
 
 func (participant *Participant) GetGXi() *big.Int {
