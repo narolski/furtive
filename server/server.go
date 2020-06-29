@@ -1,73 +1,46 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"math/rand"
 	"net/http"
 	"sync"
-	"math/big"
-	"encoding/json"
 
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 )
 
-var questions = []string{"been run by a truck", "shoplifted", "lied to a police officer", "found true love"}
-
-type clientVal struct{}
-
-type Message struct {
-	Type string `json:"type"`
-	Contents interface{} `json:"contents"`
-}
-
-type VotingData struct {
-	Id int `json:"id"`
-	Question string `json:"question"`
-	Generator *big.Int `json:"generator"`
-	BigPrimary *big.Int `json:"bigPrimary"`
-	Divisor *big.Int `json:"divisor"`
-}
-
-type Value struct {
-	Number *big.Int `json:"number"`
-}
-
-type Values struct {
-	Numbers []*big.Int `json:"numbers"`
-	Length int `json:"length"`
-}
-
 type FurtiveServer struct {
-	playersAmount int
-	question      string
-	clients       map[*websocket.Conn]clientVal
-	// addClientChan    chan *websocket.Conn
-	// removeClientChan chan *websocket.Conn
-	broadcastChan chan *Message
-	mu            sync.Mutex
+	clientsMaxAmount int
+	question         string
+	clients          map[*websocket.Conn]int
+	firstRoundChan   chan *ClientValue
+	secondRoundChan  chan *ClientValue
+	broadcastChan    chan *Message
+	mu               sync.Mutex
 }
 
-type Group struct {
-	Generator *big.Int
-	BigPrimary *big.Int
-	Divisor *big.Int
-}
-
-func NewFurtiveServer(playersAmount int) *FurtiveServer {
-	return &FurtiveServer{
-		playersAmount: playersAmount,
-		question:      fmt.Sprintf("Have you ever %s?", questions[rand.Intn(len(questions))]),
-		clients:       make(map[*websocket.Conn]clientVal),
-
-		// registerClientChan: make(chan *websocket.Conn),
-		// removeClientChan: make(chan *websocket.Conn),
-		broadcastChan: make(chan *Message),
+func NewFurtiveServer(clientsMaxAmount int) *FurtiveServer {
+	fs := &FurtiveServer{
+		clientsMaxAmount: clientsMaxAmount,
+		question:         fmt.Sprintf("Have you ever %s?", questions[rand.Intn(len(questions))]),
+		clients:          make(map[*websocket.Conn]int),
+		firstRoundChan:   make(chan *ClientValue),
+		secondRoundChan:  make(chan *ClientValue),
+		broadcastChan:    make(chan *Message),
 	}
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go fs.broadcastMessageToClients(&wg)
+	go fs.createGroupedResponse(&wg, fs.firstRoundChan, firstRoundMessageID)
+	go fs.createGroupedResponse(&wg, fs.secondRoundChan, secondRoundMessageID)
+	wg.Wait()
+	return fs
 }
 
 func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Request) {
-	// Upgrade initial GET request to a websocket
 	upgrader := &websocket.Upgrader{}
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -75,19 +48,20 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 	}
 	defer ws.Close()
 
-	// Register client and send initial message to client
-	fs.registerClient(ws)
-	
-	// TODO: Necessary to add id for clients (now 0) -> FROM 0, not 1
-	group := &Group{
-		Generator: big.NewInt(3), 
-		BigPrimary: big.NewInt(3863), 
-		Divisor: big.NewInt(7727),
-	}
-	fs.sendMessageToClient(&Message{"votingData", &VotingData{0, fs.question, group.Generator, group.BigPrimary, group.Divisor}}, ws)
+	// Register client internally and send initial message with question
+	clientID := fs.registerClient(ws)
+	fs.sendMessageToClient(&Message{
+		Type: "votingData",
+		Contents: &VotingData{
+			Id:         clientID,
+			Question:   fs.question,
+			Generator:  group.Generator,
+			BigPrimary: group.BigPrimary,
+			Divisor:    group.Divisor,
+		},
+	}, ws)
 
 	// Pass messages from clients to other clients
-	// TODO: Now only one client
 	for {
 		var contents json.RawMessage
 		msg := &Message{
@@ -99,33 +73,31 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 			ws.Close()
 			return
 		}
-		log.Info("New message type: ", msg.Type)
+		log.Infof("Received message of type '%s' from client '%d': %+v", msg.Type, clientID, msg)
+
+		var value *Value
+		if err := json.Unmarshal(contents, &value); err != nil {
+			log.Fatalf("Error when reading JSON:", err)
+			return
+		}
 
 		switch msg.Type {
-		case "roundOne":
-			var value *Value
-			if err := json.Unmarshal(contents, &value); err != nil {
-				log.Fatalln("Error when reading JSON:", err)
-				return
-			}
-			fs.sendMessageToClient(&Message{"roundOne", &Values{[]*big.Int{value.Number}, 1}}, ws)
-		case "roundTwo":
-			var value *Value
-			if err := json.Unmarshal(contents, &value); err != nil {
-				log.Fatalln("Error when reading JSON:", err)
-				return
-			}
-			fs.sendMessageToClient(&Message{"roundTwo", &Values{[]*big.Int{value.Number}, 1}}, ws)
+		case firstRoundMessageID:
+			fs.handleMessageFromClient(fs.firstRoundChan, value.Number, clientID)
+		case secondRoundMessageID:
+			fs.handleMessageFromClient(fs.secondRoundChan, value.Number, clientID)
 		default:
-			log.Fatalf("unknown message type: %q", msg.Type)
+			log.Errorf("Invalid message type '%s': %+v", msg.Type, msg)
 		}
 	}
 }
 
-func (fs *FurtiveServer) registerClient(ws *websocket.Conn) {
+func (fs *FurtiveServer) registerClient(ws *websocket.Conn) int {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	fs.clients[ws] = clientVal{}
+	id := len(fs.clients)
+	fs.clients[ws] = id
+	return id
 }
 
 func (fs *FurtiveServer) removeClient(ws *websocket.Conn) {
@@ -142,10 +114,45 @@ func (fs *FurtiveServer) sendMessageToClient(message *Message, ws *websocket.Con
 	}
 }
 
-func (fs *FurtiveServer) broadcastToClients() {
-	msg := <-fs.broadcastChan
-	log.Info("Sent message to client: ", msg.Contents)
-	for ws := range fs.clients {
-		fs.sendMessageToClient(msg, ws)
+func (fs *FurtiveServer) broadcastMessageToClients(wg *sync.WaitGroup) {
+	wg.Done()
+	for {
+		msg := <-fs.broadcastChan
+		for ws, clientID := range fs.clients {
+			fs.sendMessageToClient(msg, ws)
+			log.Infof("Message %+v sent to client ID %d", msg, clientID)
+		}
+	}
+}
+
+func (fs *FurtiveServer) createGroupedResponse(wg *sync.WaitGroup, messages chan *ClientValue, messageType string) {
+	wg.Done()
+	log.Info("Started createGroupedResponse for message type: ", messageType)
+	clientVals := make(map[int]*big.Int)
+	for {
+		if len(clientVals) == fs.clientsMaxAmount {
+			break
+		}
+		clientVal := <-messages
+		clientVals[clientVal.ClientID] = clientVal.Value
+		log.Infof("Added message from client %d to message type %s queue", clientVal.ClientID, messageType)
+	}
+	values := make([]*big.Int, fs.clientsMaxAmount)
+	for clientID, value := range clientVals {
+		values[clientID] = value
+	}
+	fs.broadcastChan <- &Message{
+		Type: messageType,
+		Contents: &Values{
+			Numbers: values,
+			Length:  len(values),
+		},
+	}
+}
+
+func (fs *FurtiveServer) handleMessageFromClient(target chan *ClientValue, value *big.Int, clientID int) {
+	target <- &ClientValue{
+		ClientID: clientID,
+		Value:    value,
 	}
 }
