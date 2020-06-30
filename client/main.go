@@ -3,51 +3,45 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+
+	"github.com/gorilla/websocket"
 )
 
-type questionResponse struct {
-	Question string `json:"question"`
-}
+const URL = "ws://127.0.0.1:9200/ws"
+const BUFFER_SIZE = 64
 
 func main() {
+	certPath := flag.String("num", "1", "number of client to use")
+
 	caCert, _ := ioutil.ReadFile("certs/ca.crt")
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 
-	cert, _ := tls.LoadX509KeyPair("certs/client1/client.crt", "certs/client1/client.key")
+	cert, _ := tls.LoadX509KeyPair(fmt.Sprintf("certs/client%s/client.crt", *certPath), fmt.Sprintf("certs/client%s/client.key", *certPath))
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				RootCAs:      caCertPool,
-				Certificates: []tls.Certificate{cert},
-			},
-		},
-	}
-
-	r, err := client.Get("https://127.0.0.1:9443/question")
-	if err != nil {
-		panic("Cannot get question")
-	}
-	defer r.Body.Close()
-
-	var resp questionResponse
-	buf, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		panic(err)
-	}
-	bodyString := string(buf)
-	fmt.Println("Body:", bodyString)
-
-	err = json.Unmarshal(buf, &resp)
+	u, err := url.Parse(URL)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(resp)
+	conn, err := tls.Dial("tcp", u.Host, &tls.Config{
+		RootCAs:      caCertPool,
+		Certificates: []tls.Certificate{cert},
+	})
+	if err != nil {
+		panic(err)
+	}
 
+	ws, _, err := websocket.NewClient(conn, u, http.Header{}, BUFFER_SIZE, BUFFER_SIZE)
+	if err != nil {
+		panic(err)
+	}
+
+	client := NewFurtiveClient(ws)
+	client.ReadMessages()
 }
