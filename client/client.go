@@ -38,6 +38,16 @@ type FurtiveClient struct {
 	Participant *Participant
 }
 
+const firstRoundMessageID = "roundOne"
+const secondRoundMessageID = "roundTwo"
+const startFirstProofMessageID = "startProofOne"
+const continueFirstProofMessageID = "continueProofOne"
+const firstProofMessageID = "proofOne"
+const startSecondProofMessageID = "startProofTwo"
+const continueSecondProofMessageID = "continueProofTwo"
+const secondProofMessageID = "proofTwo"
+const generatorForVoteMessageID = "generator"
+
 func NewFurtiveClient(ws *websocket.Conn) *FurtiveClient {
 	return &FurtiveClient{
 		ws: ws,
@@ -64,7 +74,15 @@ func (fc *FurtiveClient) ReadMessages() {
 				return
 			}
 			fc.RoundOne(votingData)
-		case "roundOne":
+			fc.StartProofOne()
+		case firstProofMessageID:
+			var value *Value
+			if err := json.Unmarshal(contents, &value); err != nil {
+				log.Fatalln("Error when reading JSON:", err)
+				return
+			}
+			fc.ContinueProofOne(value)
+		case firstRoundMessageID:
 			var values *Values
 			if err := json.Unmarshal(contents, &values); err != nil {
 				log.Fatalln("Error when reading JSON:", err)
@@ -72,7 +90,15 @@ func (fc *FurtiveClient) ReadMessages() {
 			}
 			fc.AfterRoundOne(values)
 			fc.RoundTwo()
-		case "roundTwo":
+			fc.StartProofTwo()
+		case secondProofMessageID:
+			var value *Value
+			if err := json.Unmarshal(contents, &value); err != nil {
+				log.Fatalln("Error when reading JSON:", err)
+				return
+			}
+			fc.ContinueProofTwo(value)
+		case secondRoundMessageID:
 			var values *Values
 			if err := json.Unmarshal(contents, &values); err != nil {
 				log.Fatalln("Error when reading JSON:", err)
@@ -89,15 +115,36 @@ func (fc *FurtiveClient) RoundOne(votingData *VotingData) {
 	fmt.Println("Question:", votingData.Question)
 	participant := NewParticipant(votingData.Generator, votingData.BigPrimary, votingData.Divisor, votingData.Id)
 	fc.SendMessage(&Message{
-		Type: "roundOne", 
+		Type: firstRoundMessageID, 
 		Contents: &Value{
 			Number: participant.GetGXi(),
 		}})
 	fc.Participant = participant
 }
 
+func (fc *FurtiveClient) StartProofOne() {
+	fc.SendMessage(&Message{
+		Type: startFirstProofMessageID, 
+		Contents: &Value{
+			Number: fc.Participant.GetVToProofOne(),
+		}})
+}
+
+func (fc *FurtiveClient) ContinueProofOne(value *Value) {
+	fc.SendMessage(&Message{
+		Type: continueFirstProofMessageID, 
+		Contents: &Value{
+			Number: fc.Participant.GetRToProof(value.Number),
+		}})
+}
+
 func (fc *FurtiveClient) AfterRoundOne(values *Values) {
 	fc.Participant.ComputeGYi(values.Numbers, values.Length)
+	fc.SendMessage(&Message{
+		Type: generatorForVoteMessageID, 
+		Contents: &Value{
+			Number: fc.Participant.GYi,
+		}})
 }
 
 func (fc *FurtiveClient) RoundTwo() {
@@ -106,17 +153,33 @@ func (fc *FurtiveClient) RoundTwo() {
 	text, _ := reader.ReadString('\n')
 	var vote *big.Int
 	switch text {
-	case "Y":
+	case "Y\n":
 		vote = fc.Participant.GetVoteVeto()
-	case "N":
+	case "N\n":
 		vote = fc.Participant.GetVoteNoVeto()
 	default:
 		vote = fc.Participant.GetVoteNoVeto()
 	}
 	fc.SendMessage(&Message{
-		Type: "roundTwo", 
+		Type: secondRoundMessageID, 
 		Contents: &Value{
 			Number: vote,
+		}})
+}
+
+func (fc *FurtiveClient) StartProofTwo() {
+	fc.SendMessage(&Message{
+		Type: startSecondProofMessageID, 
+		Contents: &Value{
+			Number: fc.Participant.GetVToProofTwo(),
+		}})
+}
+
+func (fc *FurtiveClient) ContinueProofTwo(value *Value) {
+	fc.SendMessage(&Message{
+		Type: continueSecondProofMessageID, 
+		Contents: &Value{
+			Number: fc.Participant.GetRToProof(value.Number),
 		}})
 }
 
