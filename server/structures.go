@@ -35,7 +35,7 @@ type ClientValue struct {
 	Value    *big.Int
 }
 
-var questions = []string{"been run by a truck", "shoplifted", "lied to a police officer", "found true love"}
+var questions = []string{"been run by a truck", "shoplifted", "lied to a police officer", "voted for PiS", "sworn a  revenge for undisclosed course requirements", "owned a VW Golf IV 1.9 TDi", "been with a girl named Jessica", "lived in Brochów"}
 
 var group = &Group{
 	Generator:  big.NewInt(3),
@@ -52,3 +52,5 @@ const startSecondProofMessageID = "startProofTwo"
 const continueSecondProofMessageID = "continueProofTwo"
 const secondProofMessageID = "proofTwo"
 const generatorForVoteMessageID = "generator"
+
+const t = 160

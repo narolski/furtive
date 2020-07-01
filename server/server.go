@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
@@ -23,6 +24,7 @@ type FurtiveServer struct {
 }
 
 func NewFurtiveServer(clientsMaxAmount int) *FurtiveServer {
+	rand.Seed(time.Now().UnixNano())
 	fs := &FurtiveServer{
 		clientsMaxAmount: clientsMaxAmount,
 		question:         fmt.Sprintf("Have you ever %s?", questions[rand.Intn(len(questions))]),
@@ -61,6 +63,15 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 		},
 	}, ws)
 
+	A := &big.Int{}
+	V := &big.Int{}
+	C := &big.Int{}
+
+	gYi := &big.Int{}
+	Y := &big.Int{}
+	V2 := &big.Int{}
+	C2 := &big.Int{}
+
 	// Pass messages from clients to other clients
 	for {
 		var contents json.RawMessage
@@ -83,73 +94,54 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 
 		switch msg.Type {
 		case firstRoundMessageID:
-			// receive A
+			A.Set(value.Number)
 			fs.handleMessageFromClient(fs.firstRoundChan, value.Number, clientID)
 		case startFirstProofMessageID:
-			// TODO
-			// receive V eg.
-			// &Message{
-			// 	Type: startFirstProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: V,
-			// 	}}
-			// then get random big.Int number c from [0, 2^t-1] (say t=160)
-			// and send it to client eg.
-			// &Message{
-			// 	Type: firstProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: c,
-			// 	}}
+			V.Set(value.Number)
+			Cx := fs.sendZeroKnowledgeProofChallenge(value.Number, ws, firstProofMessageID)
+			C.Set(Cx)
 		case continueFirstProofMessageID:
-			// TODO
-			// receive r eg.
-			// &Message{
-			// 	Type: continueFirstProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: r,
-			// 	}}
-			// then check
-			// 1) A is a valid public key
-			//    use isValueFromRoundCorrect (end of file), where A is from startFirstProofMessageID message
-			//    and divisor, bigPrimary - from Group
-			// 2) V = g^r * A^c mod p
-			//    use isValueFromProofCorrect (end of file), where 
-			//    A is from firstRoundMessageID message
-			//    V, C - startFirstProofMessageID message
-			//    r - this message
-			//    generator, divisor, bigPrimary - from Group
-			// if sth is incorrect/false - stop game
+			fs.validateZeroKnowledgeProofResponse(value.Number, V, A, V, C, group.Generator, ws)
 		case generatorForVoteMessageID:
+			gYi.Set(value.Number)
 			// TODO
 			// receive gYi eg.
 			// &Message{
-			// 	Type: startSecondProofMessageID, 
+			// 	Type: startSecondProofMessageID,
 			// 	Contents: &Value{
 			// 		Number: gYi,
 			// 	}}
 		case secondRoundMessageID:
 			// receive Y
+			Y.Set(value.Number)
 			fs.handleMessageFromClient(fs.secondRoundChan, value.Number, clientID)
 		case startSecondProofMessageID:
+			V2.Set(value.Number)
+			Cx := fs.sendZeroKnowledgeProofChallenge(value.Number, ws, secondProofMessageID)
+			C2.Set(Cx)
 			// TODO
 			// receive V eg.
 			// &Message{
-			// 	Type: startSecondProofMessageID, 
+			// 	Type: startSecondProofMessageID,
 			// 	Contents: &Value{
 			// 		Number: V,
 			// 	}}
 			// then get random big.Int number c from [0, 2^t-1] (say t=160)
 			// and send it to client eg.
 			// &Message{
-			// 	Type: secondProofMessageID, 
+			// 	Type: secondProofMessageID,
 			// 	Contents: &Value{
 			// 		Number: c,
 			// 	}}
 		case continueSecondProofMessageID:
+
+			fmt.Println("Resx:", V2, Y, C2, gYi)
+
+			fs.validateZeroKnowledgeProofResponse2(value.Number, V2, Y, V2, C2, gYi, ws)
 			// TODO
 			// receive r eg.
 			// &Message{
-			// 	Type: continueSecondProofMessageID, 
+			// 	Type: continueSecondProofMessageID,
 			// 	Contents: &Value{
 			// 		Number: r,
 			// 	}}
@@ -158,7 +150,7 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 			//    use isValueFromRoundCorrect (end of file), where Y is from startSecondProofMessageID message
 			//    and divisor, bigPrimary - from Group
 			// 2) V = gYi^r * Y^c mod p
-			//    use isValueFromProofCorrect (end of file), where 
+			//    use isValueFromProofCorrect (end of file), where
 			//    A = Y is from secondRoundMessageID message
 			//    V, C - startSecondProofMessageID message
 			//    r - this message
@@ -169,6 +161,76 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 			log.Errorf("Invalid message type '%s': %+v", msg.Type, msg)
 		}
 	}
+}
+
+func (fs *FurtiveServer) sendZeroKnowledgeProofChallenge(v *big.Int, ws *websocket.Conn, messageType string) *big.Int {
+	c := new(big.Int)
+	c.Exp(big.NewInt(2), big.NewInt(t), nil).Sub(c, big.NewInt(1))
+	fs.sendMessageToClient(&Message{
+		Type: messageType,
+		Contents: &Value{
+			Number: c,
+		},
+	}, ws)
+	return c
+}
+
+func (fs *FurtiveServer) validateZeroKnowledgeProofResponse(r, startFirstProofMsgVal, firstRoundMessageVal, startFirstProofMessageV, startFirstProofMessageC, generator *big.Int, ws *websocket.Conn) {
+	if ok := fs.isValueFromRoundCorrect(startFirstProofMsgVal, group.Divisor, group.BigPrimary); !ok {
+		panic("ZKP Error: Value from the first round is not correct")
+	}
+	if ok := fs.isValueFromProofCorrect(r, firstRoundMessageVal, startFirstProofMessageV, startFirstProofMessageC, generator, group.Divisor, group.BigPrimary); !ok {
+		panic("ZKP Error: Proof failed")
+	}
+}
+
+func (fs *FurtiveServer) validateZeroKnowledgeProofResponse2(r, startSecondProofMsgVal, secondRoundMsgVal, startSecondProofMessageV, startSecondProofMessageC, generator *big.Int, ws *websocket.Conn) {
+	if ok := fs.isValueFromRoundCorrect(startSecondProofMsgVal, group.Divisor, group.BigPrimary); !ok {
+		panic("ZKP Error: Value from the first round is not correct")
+	}
+	if ok := fs.isValueFromProofCorrect(r, secondRoundMsgVal, startSecondProofMessageV, startSecondProofMessageC, generator, group.Divisor, group.BigPrimary); !ok {
+		panic("ZKP Error: Proof failed")
+	}
+}
+
+// TODO
+// receive r eg.
+// &Message{
+// 	Type: continueSecondProofMessageID,
+// 	Contents: &Value{
+// 		Number: r,
+// 	}}
+// then check
+// 1) Y is a valid public key
+//    use isValueFromRoundCorrect (end of file), where Y is from startSecondProofMessageID message
+//    and divisor, bigPrimary - from Group
+// 2) V = gYi^r * Y^c mod p
+//    use isValueFromProofCorrect (end of file), where
+//    A = Y is from secondRoundMessageID message
+//    V, C - startSecondProofMessageID message
+//    r - this message
+//    divisor, bigPrimary - from Group
+//    generator = gYi from generatorForVoteMessageID message
+// if sth is incorrect/false - stop game
+
+func (fs *FurtiveServer) isValueFromRoundCorrect(A *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
+	if big.NewInt(0).Cmp(A) != -1 || A.Cmp(divisor) != -1 || big.NewInt(1).Cmp(big.NewInt(1).Exp(A, bigPrimary, divisor)) != 0 {
+		return false
+	}
+	return true
+}
+
+func (fs *FurtiveServer) isValueFromProofCorrect(r *big.Int, A *big.Int, V *big.Int, c *big.Int, generator *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
+	if V.Cmp(
+		big.NewInt(1).Mod(
+			big.NewInt(1).Mul(
+				big.NewInt(1).Exp(generator, r, divisor),
+				big.NewInt(1).Exp(A, c, divisor),
+			),
+			divisor)) != 0 {
+		return false
+	}
+	return true
 }
 
 func (fs *FurtiveServer) registerClient(ws *websocket.Conn) int {
@@ -234,24 +296,4 @@ func (fs *FurtiveServer) handleMessageFromClient(target chan *ClientValue, value
 		ClientID: clientID,
 		Value:    value,
 	}
-}
-
-func isValueFromRoundCorrect(A *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
-	if big.NewInt(0).Cmp(A) != -1 || A.Cmp(divisor) != -1 || big.NewInt(1).Cmp(big.NewInt(1).Exp(A, bigPrimary, divisor)) != 0 {
-		return false
-	}
-	return true
-}
-
-func isValueFromProofCorrect(r *big.Int, V *big.Int, A *big.Int, c *big.Int, generator *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
-	if V.Cmp(
-		big.NewInt(1).Mod(
-			big.NewInt(1).Mul(
-				big.NewInt(1).Exp(generator, r, divisor), 
-				big.NewInt(1).Exp(A, c, divisor),
-			),
-		divisor)) != 0 {
-		return false
-	}
-	return true
 }
