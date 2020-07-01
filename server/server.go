@@ -63,10 +63,11 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 		},
 	}, ws)
 
+	// Zero-knowledge-proof variables
 	A := &big.Int{}
 	V := &big.Int{}
 	C := &big.Int{}
-
+	
 	gYi := &big.Int{}
 	Y := &big.Int{}
 	V2 := &big.Int{}
@@ -101,10 +102,10 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 			C.Set(fs.sendZeroKnowledgeProofChallenge(value.Number, ws, firstProofMessageID))
 		case continueFirstProofMessageID:
 			if ok := fs.isValueFromRoundCorrect(V, group.Divisor, group.BigPrimary); !ok {
-				panic("ZKP1 Error: Value from the first round is incorrect")
+				fs.handleZeroKnowledgeProofError(1, 1, clientID, ws)		
 			}
 			if ok := fs.isValueFromProofCorrect(value.Number, A, V, C, group.Generator, group.Divisor, group.BigPrimary); !ok {
-				panic("ZKP1 Error: Value from the second round is incorrect")
+				fs.handleZeroKnowledgeProofError(1, 2, clientID, ws)
 			}
 		case generatorForVoteMessageID:
 			gYi.Set(value.Number)
@@ -153,7 +154,7 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 			//    use isValueFromRoundCorrect (end of file), where Y is from startSecondProofMessageID message
 			//    and divisor, bigPrimary - from Group
 			if ok := fs.isValueFromRoundCorrect(V2, group.Divisor, group.BigPrimary); !ok {
-				panic("ZKP2 Error: Value from the first round is incorrect")
+				fs.handleZeroKnowledgeProofError(2, 1, clientID, ws)
 			}
 			// 2) V = gYi^r * Y^c mod p
 			//    use isValueFromProofCorrect (end of file), where
@@ -164,7 +165,7 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 			//    generator = gYi from generatorForVoteMessageID message
 			// if sth is incorrect/false - stop game
 			if ok := fs.isValueFromProofCorrect(value.Number, Y, V2, C2, gYi, group.Divisor, group.BigPrimary); !ok {
-				panic("ZKP2 Error: Value from the second round is incorrect")
+				fs.handleZeroKnowledgeProofError(2, 2, clientID, ws)
 			}
 
 		default:
@@ -248,6 +249,15 @@ func (fs *FurtiveServer) handleMessageFromClient(target chan *ClientValue, value
 		ClientID: clientID,
 		Value:    value,
 	}
+}
+
+func (fs *FurtiveServer) handleZeroKnowledgeProofError(round, turn, clientID int, ws *websocket.Conn) {
+	fs.sendMessageToClient(&Message{
+		Type: disconnectedMesageID,
+		Contents: fmt.Sprintf("Zero-knowledge-proof turn %d, round %d failed", turn, round),
+	}, ws)
+	fs.removeClient(ws)
+	log.Errorf("ZKP%d Error: Value from the %d round is incorrect for client ID '%s'. Client disconnected.", turn, round, clientID)
 }
 
 func (fs *FurtiveServer) isValueFromProofCorrect(r *big.Int, A *big.Int, V *big.Int, c *big.Int, generator *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {

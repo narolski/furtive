@@ -52,5 +52,6 @@ const startSecondProofMessageID = "startProofTwo"
 const continueSecondProofMessageID = "continueProofTwo"
 const secondProofMessageID = "proofTwo"
 const generatorForVoteMessageID = "generator"
+const disconnectedMesageID = "disconnected"
 
 const t = 160
