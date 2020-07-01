@@ -35,7 +35,7 @@ type ClientValue struct {
 	Value    *big.Int
 }
 
-var questions = []string{"been run by a truck", "shoplifted", "lied to a police officer", "voted for PiS", "sworn a  revenge for undisclosed course requirements", "owned a VW Golf IV 1.9 TDi", "been with a girl named Jessica", "lived in Brochów"}
+var questions = []string{"been run by a truck", "shoplifted", "lied to a police officer", "voted for PiS", "sworn a  revenge for undisclosed course requirements", "owned a VW Golf IV 1.9 TDi", "lived in Brochów"}
 
 var group = &Group{
 	Generator:  big.NewInt(3),

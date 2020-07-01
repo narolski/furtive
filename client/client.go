@@ -73,6 +73,7 @@ func (fc *FurtiveClient) ReadMessages() {
 				return
 			}
 			fc.CheckResult(values)
+			return
 		case disconnectedMesageID:
 			var reason string
 			if err := json.Unmarshal(contents, &reason); err != nil {
@@ -80,9 +81,9 @@ func (fc *FurtiveClient) ReadMessages() {
 				return
 			}
 			fmt.Println("Server has ended the connection. Reason:", reason)
-			os.Exit(1)
+			return
 		default:
-			log.Fatalf("unknown message type: %q", msg.Type)
+			log.Fatalln("unknown message type:", msg.Type)
 		}
 	}
 }

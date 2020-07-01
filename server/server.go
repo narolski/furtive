@@ -89,7 +89,7 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 
 		var value *Value
 		if err := json.Unmarshal(contents, &value); err != nil {
-			log.Fatalf("Error when reading JSON:", err)
+			log.Fatalln("Error when reading JSON:", err)
 			return
 		}
 
@@ -102,10 +102,12 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 			C.Set(fs.sendZeroKnowledgeProofChallenge(value.Number, ws, firstProofMessageID))
 		case continueFirstProofMessageID:
 			if ok := fs.isValueFromRoundCorrect(V, group.Divisor, group.BigPrimary); !ok {
-				fs.handleZeroKnowledgeProofError(1, 1, clientID, ws)		
+				fs.handleZeroKnowledgeProofError(1, 1, clientID, ws)	
+				return	
 			}
 			if ok := fs.isValueFromProofCorrect(value.Number, A, V, C, group.Generator, group.Divisor, group.BigPrimary); !ok {
 				fs.handleZeroKnowledgeProofError(1, 2, clientID, ws)
+				return
 			}
 		case generatorForVoteMessageID:
 			gYi.Set(value.Number)
@@ -155,6 +157,7 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 			//    and divisor, bigPrimary - from Group
 			if ok := fs.isValueFromRoundCorrect(V2, group.Divisor, group.BigPrimary); !ok {
 				fs.handleZeroKnowledgeProofError(2, 1, clientID, ws)
+				return
 			}
 			// 2) V = gYi^r * Y^c mod p
 			//    use isValueFromProofCorrect (end of file), where
@@ -166,6 +169,7 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 			// if sth is incorrect/false - stop game
 			if ok := fs.isValueFromProofCorrect(value.Number, Y, V2, C2, gYi, group.Divisor, group.BigPrimary); !ok {
 				fs.handleZeroKnowledgeProofError(2, 2, clientID, ws)
+				return
 			}
 
 		default:
@@ -257,7 +261,8 @@ func (fs *FurtiveServer) handleZeroKnowledgeProofError(round, turn, clientID int
 		Contents: fmt.Sprintf("Zero-knowledge-proof turn %d, round %d failed", turn, round),
 	}, ws)
 	fs.removeClient(ws)
-	log.Errorf("ZKP%d Error: Value from the %d round is incorrect for client ID '%s'. Client disconnected.", turn, round, clientID)
+	ws.Close()
+	log.Errorf("ZKP%d Error: Value from the %d round is incorrect for client ID '%d'. Client disconnected.", turn, round, clientID)
 }
 
 func (fs *FurtiveServer) isValueFromProofCorrect(r *big.Int, A *big.Int, V *big.Int, c *big.Int, generator *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
