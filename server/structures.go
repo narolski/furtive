@@ -45,3 +45,10 @@ var group = &Group{
 
 const firstRoundMessageID = "roundOne"
 const secondRoundMessageID = "roundTwo"
+const startFirstProofMessageID = "startProofOne"
+const continueFirstProofMessageID = "continueProofOne"
+const firstProofMessageID = "proofOne"
+const startSecondProofMessageID = "startProofTwo"
+const continueSecondProofMessageID = "continueProofTwo"
+const secondProofMessageID = "proofTwo"
+const generatorForVoteMessageID = "generator"

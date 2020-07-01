@@ -11,6 +11,7 @@ type Participant struct {
 	q *big.Int
 	p *big.Int
 	GYi *big.Int
+	v *big.Int
 }
 
 func NewParticipant(g, q, p *big.Int, index int) *Participant {
@@ -43,6 +44,7 @@ func (participant *Participant) GetVoteVeto() *big.Int {
 	for c.Cmp(participant.x) == 0 {
 		c = getRandom(participant.q)
 	}
+	participant.x = c
 	return c.Exp(participant.GYi, c, participant.p)
 }
 
@@ -56,4 +58,19 @@ func (participant *Participant) isVeto(listOfVotes []*big.Int, sizeOfList int) b
 		result.Mod(result.Mul(result, listOfVotes[i]), participant.p)
 	}
 	return result.Cmp(big.NewInt(1)) != 0
+}
+
+func (participant *Participant) GetVToProofOne() *big.Int {
+	participant.v = getRandom(participant.q)
+	return big.NewInt(0).Exp(participant.g, participant.v, participant.p)
+}
+
+func (participant *Participant) GetRToProof(c *big.Int) *big.Int {
+	result := big.NewInt(0);
+	return result.Mod(result.Sub(participant.v, big.NewInt(1).Mul(participant.x, c)), participant.q)
+}
+
+func (participant *Participant) GetVToProofTwo() *big.Int {
+	participant.v = getRandom(participant.q)
+	return big.NewInt(0).Exp(participant.GYi, participant.v, participant.p)
 }
