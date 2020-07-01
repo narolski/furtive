@@ -2,51 +2,19 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
-	"os"
 	"log"
 	"math/big"
-	"encoding/json"
+	"os"
 
 	"github.com/gorilla/websocket"
 )
 
-type Message struct {
-	Type string `json:"type"`
-	Contents interface{} `json:"contents"`
-}
-
-type VotingData struct {
-	Id int `json:"id"`
-	Question string `json:"question"`
-	Generator *big.Int `json:"generator"`
-	BigPrimary *big.Int `json:"bigPrimary"`
-	Divisor *big.Int `json:"divisor"`
-}
-
-type Value struct {
-	Number *big.Int `json:"number"`
-}
-
-type Values struct {
-	Numbers []*big.Int `json:"numbers"`
-	Length int `json:"length"`
-}
-
 type FurtiveClient struct {
-	ws *websocket.Conn
+	ws          *websocket.Conn
 	Participant *Participant
 }
-
-const firstRoundMessageID = "roundOne"
-const secondRoundMessageID = "roundTwo"
-const startFirstProofMessageID = "startProofOne"
-const continueFirstProofMessageID = "continueProofOne"
-const firstProofMessageID = "proofOne"
-const startSecondProofMessageID = "startProofTwo"
-const continueSecondProofMessageID = "continueProofTwo"
-const secondProofMessageID = "proofTwo"
-const generatorForVoteMessageID = "generator"
 
 func NewFurtiveClient(ws *websocket.Conn) *FurtiveClient {
 	return &FurtiveClient{
@@ -105,6 +73,14 @@ func (fc *FurtiveClient) ReadMessages() {
 				return
 			}
 			fc.CheckResult(values)
+		case disconnectedMesageID:
+			var reason string
+			if err := json.Unmarshal(contents, &reason); err != nil {
+				log.Fatalln("Error when reading JSON:", err)
+				return
+			}
+			fmt.Println("Server has ended the connection. Reason:", reason)
+			os.Exit(1)
 		default:
 			log.Fatalf("unknown message type: %q", msg.Type)
 		}
@@ -115,7 +91,7 @@ func (fc *FurtiveClient) RoundOne(votingData *VotingData) {
 	fmt.Println("Question:", votingData.Question)
 	participant := NewParticipant(votingData.Generator, votingData.BigPrimary, votingData.Divisor, votingData.Id)
 	fc.SendMessage(&Message{
-		Type: firstRoundMessageID, 
+		Type: firstRoundMessageID,
 		Contents: &Value{
 			Number: participant.GetGXi(),
 		}})
@@ -124,7 +100,7 @@ func (fc *FurtiveClient) RoundOne(votingData *VotingData) {
 
 func (fc *FurtiveClient) StartProofOne() {
 	fc.SendMessage(&Message{
-		Type: startFirstProofMessageID, 
+		Type: startFirstProofMessageID,
 		Contents: &Value{
 			Number: fc.Participant.GetVToProofOne(),
 		}})
@@ -132,7 +108,7 @@ func (fc *FurtiveClient) StartProofOne() {
 
 func (fc *FurtiveClient) ContinueProofOne(value *Value) {
 	fc.SendMessage(&Message{
-		Type: continueFirstProofMessageID, 
+		Type: continueFirstProofMessageID,
 		Contents: &Value{
 			Number: fc.Participant.GetRToProof(value.Number),
 		}})
@@ -141,7 +117,7 @@ func (fc *FurtiveClient) ContinueProofOne(value *Value) {
 func (fc *FurtiveClient) AfterRoundOne(values *Values) {
 	fc.Participant.ComputeGYi(values.Numbers, values.Length)
 	fc.SendMessage(&Message{
-		Type: generatorForVoteMessageID, 
+		Type: generatorForVoteMessageID,
 		Contents: &Value{
 			Number: fc.Participant.GYi,
 		}})
@@ -161,7 +137,7 @@ func (fc *FurtiveClient) RoundTwo() {
 		vote = fc.Participant.GetVoteNoVeto()
 	}
 	fc.SendMessage(&Message{
-		Type: secondRoundMessageID, 
+		Type: secondRoundMessageID,
 		Contents: &Value{
 			Number: vote,
 		}})
@@ -169,7 +145,7 @@ func (fc *FurtiveClient) RoundTwo() {
 
 func (fc *FurtiveClient) StartProofTwo() {
 	fc.SendMessage(&Message{
-		Type: startSecondProofMessageID, 
+		Type: startSecondProofMessageID,
 		Contents: &Value{
 			Number: fc.Participant.GetVToProofTwo(),
 		}})
@@ -177,7 +153,7 @@ func (fc *FurtiveClient) StartProofTwo() {
 
 func (fc *FurtiveClient) ContinueProofTwo(value *Value) {
 	fc.SendMessage(&Message{
-		Type: continueSecondProofMessageID, 
+		Type: continueSecondProofMessageID,
 		Contents: &Value{
 			Number: fc.Participant.GetRToProof(value.Number),
 		}})
