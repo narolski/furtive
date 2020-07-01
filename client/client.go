@@ -73,7 +73,6 @@ func (fc *FurtiveClient) ReadMessages() {
 				return
 			}
 			fc.CheckResult(values)
-			return
 		case disconnectedMesageID:
 			var reason string
 			if err := json.Unmarshal(contents, &reason); err != nil {
