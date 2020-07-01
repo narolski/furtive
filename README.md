@@ -1,6 +1,7 @@
 # furtive
-Anonymous veto network-based social game proof-of-concept.
 
-Alpha version - client and server written in Golang, both using a secure mTLS-based method of communication.
+*Anonymous Veto Network*-based proof-of-concept for a social game which asks players to respond to sensitive questions. 
 
-Av-algorithm branch - there are methods needed for clients to compute appropriate values (client/participant.go). They implement needed functionality for AV (group operations).
+The goal of the project was to design and implement a protocol such, that no third party is able to obtain individual players' responses. This is achieved through an AV-net based implementation and a secure, *mTLS*-based method of communication.
+
+*Furtive* client and server applications are written in `go`. The messages between clients and a game server are relayed through a secure websocket connection.
