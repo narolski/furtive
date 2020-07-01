@@ -5,7 +5,9 @@ step ca certificate "127.0.0.1" server.crt server.key
 step ca root ca.crt
 
 # Request client certificate
-step ca certificate "client1" client1.crt client1.key
+step ca certificate "client1" client.crt client.key
+step ca certificate "client2" client.crt client.key
+step ca certificate "client3" client.crt client.key
 
 # Prolong the individual certificate expiration date
 step ca renew server.crt server.key --expires-in=720h --force

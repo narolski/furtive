@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
@@ -23,6 +24,7 @@ type FurtiveServer struct {
 }
 
 func NewFurtiveServer(clientsMaxAmount int) *FurtiveServer {
+	rand.Seed(time.Now().UnixNano())
 	fs := &FurtiveServer{
 		clientsMaxAmount: clientsMaxAmount,
 		question:         fmt.Sprintf("Have you ever %s?", questions[rand.Intn(len(questions))]),
@@ -61,6 +63,16 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 		},
 	}, ws)
 
+	// Zero-knowledge-proof variables
+	A := &big.Int{}
+	V := &big.Int{}
+	C := &big.Int{}
+	
+	gYi := &big.Int{}
+	Y := &big.Int{}
+	V2 := &big.Int{}
+	C2 := &big.Int{}
+
 	// Pass messages from clients to other clients
 	for {
 		var contents json.RawMessage
@@ -77,94 +89,44 @@ func (fs *FurtiveServer) connectionHandler(w http.ResponseWriter, r *http.Reques
 
 		var value *Value
 		if err := json.Unmarshal(contents, &value); err != nil {
-			log.Fatalf("Error when reading JSON:", err)
+			log.Fatalln("Error when reading JSON:", err)
 			return
 		}
 
 		switch msg.Type {
 		case firstRoundMessageID:
-			// receive A
+			A.Set(value.Number)
 			fs.handleMessageFromClient(fs.firstRoundChan, value.Number, clientID)
 		case startFirstProofMessageID:
-			// TODO
-			// receive V eg.
-			// &Message{
-			// 	Type: startFirstProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: V,
-			// 	}}
-			// then get random big.Int number c from [0, 2^t-1] (say t=160)
-			// and send it to client eg.
-			// &Message{
-			// 	Type: firstProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: c,
-			// 	}}
+			V.Set(value.Number)
+			C.Set(fs.sendZeroKnowledgeProofChallenge(value.Number, ws, firstProofMessageID))
 		case continueFirstProofMessageID:
-			// TODO
-			// receive r eg.
-			// &Message{
-			// 	Type: continueFirstProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: r,
-			// 	}}
-			// then check
-			// 1) A is a valid public key
-			//    use isValueFromRoundCorrect (end of file), where A is from startFirstProofMessageID message
-			//    and divisor, bigPrimary - from Group
-			// 2) V = g^r * A^c mod p
-			//    use isValueFromProofCorrect (end of file), where 
-			//    A is from firstRoundMessageID message
-			//    V, C - startFirstProofMessageID message
-			//    r - this message
-			//    generator, divisor, bigPrimary - from Group
-			// if sth is incorrect/false - stop game
+			if ok := fs.isValueFromRoundCorrect(V, group.Divisor, group.BigPrimary); !ok {
+				fs.handleZeroKnowledgeProofError(1, 1, clientID, ws)	
+				return	
+			}
+			if ok := fs.isValueFromProofCorrect(value.Number, A, V, C, group.Generator, group.Divisor, group.BigPrimary); !ok {
+				fs.handleZeroKnowledgeProofError(1, 2, clientID, ws)
+				return
+			}
 		case generatorForVoteMessageID:
-			// TODO
-			// receive gYi eg.
-			// &Message{
-			// 	Type: startSecondProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: gYi,
-			// 	}}
+			gYi.Set(value.Number)
 		case secondRoundMessageID:
-			// receive Y
+			Y.Set(value.Number)
 			fs.handleMessageFromClient(fs.secondRoundChan, value.Number, clientID)
 		case startSecondProofMessageID:
-			// TODO
-			// receive V eg.
-			// &Message{
-			// 	Type: startSecondProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: V,
-			// 	}}
-			// then get random big.Int number c from [0, 2^t-1] (say t=160)
-			// and send it to client eg.
-			// &Message{
-			// 	Type: secondProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: c,
-			// 	}}
+			V2.Set(value.Number)
+			C2.Set(fs.sendZeroKnowledgeProofChallenge(value.Number, ws, secondProofMessageID))
 		case continueSecondProofMessageID:
-			// TODO
-			// receive r eg.
-			// &Message{
-			// 	Type: continueSecondProofMessageID, 
-			// 	Contents: &Value{
-			// 		Number: r,
-			// 	}}
-			// then check
-			// 1) Y is a valid public key
-			//    use isValueFromRoundCorrect (end of file), where Y is from startSecondProofMessageID message
-			//    and divisor, bigPrimary - from Group
-			// 2) V = gYi^r * Y^c mod p
-			//    use isValueFromProofCorrect (end of file), where 
-			//    A = Y is from secondRoundMessageID message
-			//    V, C - startSecondProofMessageID message
-			//    r - this message
-			//    divisor, bigPrimary - from Group
-			//    generator = gYi from generatorForVoteMessageID message
-			// if sth is incorrect/false - stop game
+			if ok := fs.isValueFromRoundCorrect(V2, group.Divisor, group.BigPrimary); !ok {
+				fs.handleZeroKnowledgeProofError(2, 1, clientID, ws)
+				return
+			}
+			if ok := fs.isValueFromProofCorrect(value.Number, Y, V2, C2, gYi, group.Divisor, group.BigPrimary); !ok {
+				fs.handleZeroKnowledgeProofError(2, 2, clientID, ws)
+				return
+			}
+
 		default:
 			log.Errorf("Invalid message type '%s': %+v", msg.Type, msg)
 		}
@@ -236,21 +198,43 @@ func (fs *FurtiveServer) handleMessageFromClient(target chan *ClientValue, value
 	}
 }
 
-func isValueFromRoundCorrect(A *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
-	if big.NewInt(0).Cmp(A) != -1 || A.Cmp(divisor) != -1 || big.NewInt(1).Cmp(big.NewInt(1).Exp(A, bigPrimary, divisor)) != 0 {
+func (fs *FurtiveServer) sendZeroKnowledgeProofChallenge(v *big.Int, ws *websocket.Conn, messageType string) *big.Int {
+	c := new(big.Int)
+	c.Exp(big.NewInt(2), big.NewInt(t), nil).Sub(c, big.NewInt(1))
+	fs.sendMessageToClient(&Message{
+		Type: messageType,
+		Contents: &Value{
+			Number: c,
+		},
+	}, ws)
+	return c
+}
+
+func (fs *FurtiveServer) handleZeroKnowledgeProofError(round, turn, clientID int, ws *websocket.Conn) {
+	fs.sendMessageToClient(&Message{
+		Type: disconnectedMesageID,
+		Contents: fmt.Sprintf("Zero-knowledge-proof turn %d, round %d failed", turn, round),
+	}, ws)
+	fs.removeClient(ws)
+	ws.Close()
+	log.Errorf("ZKP%d Error: Value from the %d round is incorrect for client ID '%d'. Client disconnected.", turn, round, clientID)
+}
+
+func (fs *FurtiveServer) isValueFromProofCorrect(r *big.Int, A *big.Int, V *big.Int, c *big.Int, generator *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
+	if V.Cmp(
+		big.NewInt(1).Mod(
+			big.NewInt(1).Mul(
+				big.NewInt(1).Exp(generator, r, divisor),
+				big.NewInt(1).Exp(A, c, divisor),
+			),
+			divisor)) != 0 {
 		return false
 	}
 	return true
 }
 
-func isValueFromProofCorrect(r *big.Int, V *big.Int, A *big.Int, c *big.Int, generator *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
-	if V.Cmp(
-		big.NewInt(1).Mod(
-			big.NewInt(1).Mul(
-				big.NewInt(1).Exp(generator, r, divisor), 
-				big.NewInt(1).Exp(A, c, divisor),
-			),
-		divisor)) != 0 {
+func (fs *FurtiveServer) isValueFromRoundCorrect(A *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
+	if big.NewInt(0).Cmp(A) != -1 || A.Cmp(divisor) != -1 || big.NewInt(1).Cmp(big.NewInt(1).Exp(A, bigPrimary, divisor)) != 0 {
 		return false
 	}
 	return true

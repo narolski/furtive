@@ -6,21 +6,21 @@ import (
 
 type Participant struct {
 	index int
-	x *big.Int
-	g *big.Int
-	q *big.Int
-	p *big.Int
-	GYi *big.Int
-	v *big.Int
+	x     *big.Int
+	g     *big.Int
+	q     *big.Int
+	p     *big.Int
+	GYi   *big.Int
+	v     *big.Int
 }
 
 func NewParticipant(g, q, p *big.Int, index int) *Participant {
 	return &Participant{
-	    index: index,
-	    x: getRandom(q),
-	    g: g,
-	    q : q,
-	    p : p,
+		index: index,
+		x:     getRandom(q),
+		g:     g,
+		q:     q,
+		p:     p,
 	}
 }
 
@@ -45,7 +45,7 @@ func (participant *Participant) GetVoteVeto() *big.Int {
 		c = getRandom(participant.q)
 	}
 	participant.x = c
-	return c.Exp(participant.GYi, c, participant.p)
+	return big.NewInt(0).Exp(participant.GYi, c, participant.p)
 }
 
 func (participant *Participant) GetVoteNoVeto() *big.Int {
@@ -66,7 +66,7 @@ func (participant *Participant) GetVToProofOne() *big.Int {
 }
 
 func (participant *Participant) GetRToProof(c *big.Int) *big.Int {
-	result := big.NewInt(0);
+	result := big.NewInt(0)
 	return result.Mod(result.Sub(participant.v, big.NewInt(1).Mul(participant.x, c)), participant.q)
 }
 

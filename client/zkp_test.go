@@ -2,10 +2,10 @@ package main
 
 import (
 	"math/big"
-	"fmt"
+	"testing"
 )
 
-func main() {
+func TestZeroKnowledgeProof(t *testing.T) {
 	generator := big.NewInt(3)
 	divisor := big.NewInt(7727)
 	bigPrimary := big.NewInt(3863)
@@ -17,9 +17,9 @@ func main() {
 	c := big.NewInt(12345678)
 	r := participant.GetRToProof(c)
 	A1 := isValueFromRoundCorrect(A, divisor, bigPrimary)
-	fmt.Println(A1)
+	// fmt.Println(A1)
 	V1 := isValueFromProofCorrect(r, V, A, c, generator, divisor, bigPrimary)
-	fmt.Println(V1)
+	// fmt.Println(V1)
 
 	// round two with proof
 	participant.ComputeGYi([]*big.Int{A}, 1)
@@ -28,9 +28,13 @@ func main() {
 	V = participant.GetVToProofTwo()
 	r = participant.GetRToProof(c)
 	A2 := isValueFromRoundCorrect(Y, divisor, bigPrimary)
-	fmt.Println(A2)
+	// fmt.Println(A2)
 	V2 := isValueFromProofCorrect(r, V, Y, c, participant.GYi, divisor, bigPrimary)
-	fmt.Println(V2)
+	// fmt.Println(V2)
+
+	if A1 != true || V1 != true || A2 != true || V2 != true {
+		t.Error("Invalid result")
+	}
 }
 
 func isValueFromRoundCorrect(A *big.Int, divisor *big.Int, bigPrimary *big.Int) bool {
@@ -44,10 +48,10 @@ func isValueFromProofCorrect(r *big.Int, V *big.Int, A *big.Int, c *big.Int, gen
 	if V.Cmp(
 		big.NewInt(1).Mod(
 			big.NewInt(1).Mul(
-				big.NewInt(1).Exp(generator, r, divisor), 
+				big.NewInt(1).Exp(generator, r, divisor),
 				big.NewInt(1).Exp(A, c, divisor),
 			),
-		divisor)) != 0 {
+			divisor)) != 0 {
 		return false
 	}
 	return true

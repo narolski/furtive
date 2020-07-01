@@ -24,25 +24,6 @@ type Values struct {
 	Length  int        `json:"length"`
 }
 
-type Group struct {
-	Generator  *big.Int
-	BigPrimary *big.Int
-	Divisor    *big.Int
-}
-
-type ClientValue struct {
-	ClientID int
-	Value    *big.Int
-}
-
-var questions = []string{"been run by a truck", "shoplifted", "lied to a police officer", "voted for PiS", "sworn a  revenge for undisclosed course requirements", "owned a VW Golf IV 1.9 TDi", "lived in Brochów"}
-
-var group = &Group{
-	Generator:  big.NewInt(3),
-	BigPrimary: big.NewInt(3863),
-	Divisor:    big.NewInt(7727),
-}
-
 const firstRoundMessageID = "roundOne"
 const secondRoundMessageID = "roundTwo"
 const startFirstProofMessageID = "startProofOne"
@@ -53,5 +34,3 @@ const continueSecondProofMessageID = "continueProofTwo"
 const secondProofMessageID = "proofTwo"
 const generatorForVoteMessageID = "generator"
 const disconnectedMesageID = "disconnected"
-
-const t = 160
